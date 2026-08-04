@@ -19,6 +19,7 @@
 #define CRT_FILE BUILD_DIR "/MOK.crt"
 #define DER_FILE BUILD_DIR "/MOK.der"
 #define MOK_SUBJECT "/CN=SealCore MOK/"
+#define MOK_GUID "77fa9abd-0359-4d32-bd60-28f4e78f784b"
 
 #define SBAT_CSV BUILD_DIR "/sbat.csv"
 #define SBAT_OBJ BUILD_DIR "/sbat.o"
@@ -196,5 +197,23 @@ CF_TARGET(
     CF_DEPENDS(vars),
     CF_HELP_STRING("Build and sign SealCore")
 ) {
+    printf(OK_TAG "All done!\n");
+}
+
+CF_TARGET(
+    sb,
+    CF_DEPENDS(keys),
+    CF_DEPENDS(esp),
+    CF_DEPENDS(vars),
+    CF_HELP_STRING("Same as 'all' but enrolls MOK key")
+) {
+    CF_BANNER(SB_TAG "Enrolling MOK...");
+    CF_RUN(
+        "out=$(virt-fw-vars --input " VARS_FD " --output " VARS_FD " "
+        "--add-mok " MOK_GUID " " CRT_FILE
+        " 2>&1) || { echo \"$out\"; exit 1; }"
+    );
+    printf(SB_TAG "  Snapshot %s\n", VARS_CLEAN_FD);
+    CF_CP(VARS_FD, VARS_CLEAN_FD);
     printf(OK_TAG "All done!\n");
 }
