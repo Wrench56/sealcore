@@ -1,0 +1,19 @@
+# Ignore playground/ directory
+playground/
+
+# Ignore CForge artifacts
+cforge.h
+.b
+.cforge.db
+
+# Ignore CCLS cache
+.ccls-cache/
+
+# Ignore compile_commands.json
+compile_commands.json
+
+# Ignore build artifacts
+build/
+
+# Ignore commitlint executable
+tools/commitlint*
