@@ -4,7 +4,45 @@
 #error "CForge too old!"
 #endif
 
+#include <stddef.h>
 #include <stdio.h>
+#include <stdlib.h>
+
+#if defined(__clang__)
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wsign-conversion"
+#pragma clang diagnostic ignored "-Wconversion"
+#pragma clang diagnostic ignored "-Wdouble-promotion"
+#pragma clang diagnostic ignored "-Winfinite-recursion"
+#pragma clang diagnostic ignored "-Wshadow"
+#pragma clang diagnostic ignored "-Wmissing-prototypes"
+#elif defined(__GNUC__) || defined(__GNUG__)
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wsign-conversion"
+#pragma GCC diagnostic ignored "-Wconversion"
+#pragma GCC diagnostic ignored "-Wdouble-promotion"
+#pragma GCC diagnostic ignored "-Winfinite-recursion"
+#pragma GCC diagnostic ignored "-Wshadow"
+#pragma GCC diagnostic ignored "-Wmissing-prototypes"
+#endif
+
+double pow(double base, double exp) {
+    return __builtin_pow(base, exp);
+}
+
+double ldexp(double x, int exp) {
+    return __builtin_scalbn(x, exp);
+}
+
+#define _MATH_H 1
+#define STB_IMAGE_IMPLEMENTATION
+#include "libs/stb/stb_image.h"
+
+#if defined(__clang__)
+#pragma clang diagnostic pop
+#elif defined(__GNUC__) || defined(__GNUG__)
+#pragma GCC diagnostic pop
+#endif
 
 /* This sucks and differs per distro... Torvalds, why allow distros, why?! */
 #define OVMF_CODE "/usr/share/edk2/x64/OVMF_CODE.secboot.4m.fd"
@@ -14,6 +52,7 @@
 
 #define BUILD_DIR "build"
 #define OBJ_DIR BUILD_DIR "/obj"
+#define ASSETS_DIR "assets"
 
 #define KEY_FILE BUILD_DIR "/MOK.key"
 #define CRT_FILE BUILD_DIR "/MOK.crt"
@@ -39,7 +78,11 @@
 #define ESP_GRUB64 ESP_BOOT_DIR "/grubx64.efi"
 #define ESP_MOK_DER "::/MOK.der"
 
+#define LOGO_PNG ASSETS_DIR "/sealcore_164x164.png"
+#define LOGO_BIN "includes/logo.hex"
+
 #define KY_TAG "[  " CF_GREEN "KY" CF_RESET "  ] "
+#define LG_TAG "[  " CF_BLUE "LG" CF_RESET "  ] "
 #define CC_TAG "[  " CF_YELLOW "CC" CF_RESET "  ] "
 #define SB_TAG "[  " CF_YELLOW "SB" CF_RESET "  ] "
 #define LD_TAG "[  " CF_CYAN "LD" CF_RESET "  ] "
@@ -48,6 +91,17 @@
 #define VR_TAG "[  " CF_MAGENTA "VR" CF_RESET "  ] "
 #define QM_TAG "[  " CF_RED "QM" CF_RESET "  ] "
 #define OK_TAG "[  " CF_GREEN "OK" CF_RESET "  ] "
+#define FA_TAG "[ " CF_RED "FAIL" CF_RESET " ] "
+
+typedef union __attribute__((packed)) {
+    struct __attribute__((packed)) {
+        uint8_t b;
+        uint8_t g;
+        uint8_t r;
+        uint8_t a;
+    };
+    uint32_t raw;
+} pixel_data_t;
 
 static void compile_sources(const char* pattern) {
     for CF_GLOBS_EACH(pattern, file) {
@@ -90,7 +144,73 @@ CF_TARGET(keys, CF_HIDDEN) {
     printf(KY_TAG "  Keys ready\n");
 }
 
-CF_TARGET(compile, CF_HIDDEN) {
+CF_TARGET(logo, CF_HIDDEN) {
+    CF_MKDIR(BUILD_DIR);
+    CF_BANNER(LG_TAG "Generating logo...");
+
+    if (CF_FILE_EXISTS(LOGO_BIN)) {
+        printf(LG_TAG "  %s exists\n", LOGO_BIN);
+        return;
+    }
+
+    int width;
+    int height;
+    int channels;
+    int des_channels = 4;
+    uint8_t*
+        imgdata = stbi_load(LOGO_PNG, &width, &height, &channels, des_channels);
+    if (!imgdata) {
+        fprintf(stderr, FA_TAG "Error: Could not load logo\n");
+        fflush(stderr);
+        exit(1);
+    }
+
+    pixel_data_t* pxheap = (pixel_data_t*) malloc(
+        (size_t) (height * width) * sizeof(pixel_data_t)
+    );
+    if (pxheap == NULL) {
+        fprintf(stderr, FA_TAG "Error: malloc() failed!\n");
+        fflush(stderr);
+        stbi_image_free(imgdata);
+        exit(1);
+    }
+
+    for (int y = 0; y < height; ++y) {
+        for (int x = 0; x < width; ++x) {
+            const uint32_t pixel_index = (uint32_t) ((y * width + x) *
+                                                     channels);
+
+            pixel_data_t* pixel = &pxheap[y * width + x];
+            pixel->r = imgdata[pixel_index];
+            pixel->g = imgdata[pixel_index + 1];
+            pixel->b = imgdata[pixel_index + 2];
+            pixel->a = imgdata[pixel_index + 3];
+        }
+    }
+
+    FILE* fp = fopen(LOGO_BIN, "w");
+
+    const size_t total_pixels = (size_t) (height * width);
+    for (size_t i = 0; i < total_pixels; ++i) {
+        fprintf(
+            fp,
+            "0x%02X, 0x%02X, 0x%02X, 0x%02X,\n",
+            pxheap[i].b,
+            pxheap[i].g,
+            pxheap[i].r,
+            pxheap[i].a
+        );
+    }
+
+    fclose(fp);
+
+    free(pxheap);
+    stbi_image_free(imgdata);
+
+    printf(LG_TAG "  %s ready\n", LOGO_BIN);
+}
+
+CF_TARGET(compile, CF_DEPENDS(logo), CF_HIDDEN) {
     CF_MKDIR(OBJ_DIR);
     CF_BANNER(CC_TAG "Compiling...");
 

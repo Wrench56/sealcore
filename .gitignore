@@ -17,3 +17,6 @@ build/
 
 # Ignore commitlint executable
 tools/commitlint*
+
+# Ignore logo image hex
+includes/logo.hex
