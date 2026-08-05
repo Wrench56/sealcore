@@ -23,6 +23,7 @@ rules:
       - license
       - core
       - assets
+      - libs
   subject-empty:
     level: error
   type:
