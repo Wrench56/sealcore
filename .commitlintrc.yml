@@ -24,6 +24,7 @@ rules:
       - core
       - assets
       - libs
+      - gfx
   subject-empty:
     level: error
   type:
