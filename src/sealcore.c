@@ -1,4 +1,11 @@
 #include <efi.h>
+#include <stdint.h>
+
+#include "img.h"
+
+static const uint8_t imgdata[] = {
+    #include "logo.hex"
+};
 
 static void wait_for_enter(EFI_SYSTEM_TABLE* st) {
     EFI_INPUT_KEY key;
@@ -23,6 +30,13 @@ efi_main(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE* SystemTable) {
         SystemTable->ConOut,
         L"Press Enter to continue...\r\n"
     );
+
+    setup_gfx(SystemTable);
+    image_t image;
+    image.width = 164;
+    image.height = 164;
+    image.data = (pixel_data_t*) &imgdata;
+    draw_img(&image, 0, 0);
 
     wait_for_enter(SystemTable);
     return EFI_SUCCESS;
