@@ -1,10 +1,10 @@
 #include <efi.h>
 #include <stdint.h>
 
-#include "img.h"
+#include "gfx/img.h"
 
 static const uint8_t imgdata[] = {
-    #include "logo.hex"
+    #include "boot/logo.hex"
 };
 
 static void wait_for_enter(EFI_SYSTEM_TABLE* st) {

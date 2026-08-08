@@ -79,7 +79,7 @@ double ldexp(double x, int exp) {
 #define ESP_MOK_DER "::/MOK.der"
 
 #define LOGO_PNG ASSETS_DIR "/sealcore_164x164.png"
-#define LOGO_BIN "includes/logo.hex"
+#define LOGO_BIN "includes/boot/logo.hex"
 
 #define KY_TAG "[  " CF_GREEN "KY" CF_RESET "  ] "
 #define LG_TAG "[  " CF_BLUE "LG" CF_RESET "  ] "

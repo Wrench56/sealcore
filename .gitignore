@@ -19,4 +19,4 @@ build/
 tools/commitlint*
 
 # Ignore logo image hex
-includes/logo.hex
+includes/boot/logo.hex

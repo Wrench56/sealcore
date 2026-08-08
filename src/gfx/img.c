@@ -1,4 +1,4 @@
-#include "img.h"
+#include "gfx/img.h"
 
 static const EFI_GUID gop_guid = EFI_GRAPHICS_OUTPUT_PROTOCOL_GUID;
 static EFI_GRAPHICS_OUTPUT_PROTOCOL* prot = NULL;
