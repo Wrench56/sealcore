@@ -217,6 +217,7 @@ CF_TARGET(compile, CF_DEPENDS(logo), CF_HIDDEN) {
     compile_sources("src/*.c");
     compile_sources("src/**/*.c");
     compile_sources("src/**/**/*.c");
+    compile_sources("src/**/**/**/*.c");
 }
 
 CF_TARGET(link, CF_DEPENDS(compile), CF_HIDDEN) {
