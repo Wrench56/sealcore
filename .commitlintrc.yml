@@ -25,6 +25,7 @@ rules:
       - assets
       - libs
       - gfx
+      - shim
       - crypto
   subject-empty:
     level: error
