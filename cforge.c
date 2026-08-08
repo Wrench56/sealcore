@@ -63,6 +63,7 @@ double ldexp(double x, int exp) {
 #define SBAT_CSV BUILD_DIR "/sbat.csv"
 #define SBAT_OBJ BUILD_DIR "/sbat.o"
 
+#define SEALBOOT_EFI BUILD_DIR "/sealboot.efi"
 #define SEALCORE_EFI BUILD_DIR "/sealcore.efi"
 #define GRUB_EFI BUILD_DIR "/grubx64.efi"
 
@@ -73,9 +74,11 @@ double ldexp(double x, int exp) {
 #define VARS_CLEAN_FD BUILD_DIR "/my_VARS.clean.fd"
 
 #define ESP_BOOT_DIR "::/EFI/BOOT"
+#define ESP_SEALCORE_DIR "::/EFI/SEALCORE"
 #define ESP_BOOTX64 ESP_BOOT_DIR "/BOOTX64.EFI"
 #define ESP_MM64 ESP_BOOT_DIR "/mmx64.efi"
 #define ESP_GRUB64 ESP_BOOT_DIR "/grubx64.efi"
+#define ESP_SEALCORE64 ESP_SEALCORE_DIR "/sealcore.efi"
 #define ESP_MOK_DER "::/MOK.der"
 
 #define LOGO_PNG ASSETS_DIR "/sealcore_164x164.png"
@@ -103,12 +106,12 @@ typedef union __attribute__((packed)) {
     uint32_t raw;
 } pixel_data_t;
 
-static void compile_sources(const char* pattern) {
+static void compile_sources(const char* pattern, const char* out_dir) {
     for CF_GLOBS_EACH(pattern, file) {
         char* output = CF_MAP(
             file,
             CF_MAP_EXT("o"),
-            CF_MAP_DIRS(OBJ_DIR "/")
+            CF_MAP_DIRS((char*) out_dir)
         );
         printf(CC_TAG "  %s -> %s\n", file, output);
         CF_RUNP(
@@ -212,16 +215,24 @@ CF_TARGET(logo, CF_HIDDEN) {
 
 CF_TARGET(compile, CF_DEPENDS(logo), CF_HIDDEN) {
     CF_MKDIR(OBJ_DIR);
+    CF_MKDIR(OBJ_DIR "/boot");
+    CF_MKDIR(OBJ_DIR "/core");
     CF_BANNER(CC_TAG "Compiling...");
 
-    compile_sources("src/*.c");
-    compile_sources("src/**/*.c");
-    compile_sources("src/**/**/*.c");
-    compile_sources("src/**/**/**/*.c");
+    compile_sources("src/boot/*.c", OBJ_DIR "/boot/");
+    compile_sources("src/core/*.c", OBJ_DIR "/core/");
+
+    compile_sources("src/*.c", OBJ_DIR "/");
+    compile_sources("src/gfx/*.c", OBJ_DIR "/");
+    compile_sources("src/shim/*.c", OBJ_DIR "/");
+    compile_sources("src/crypto/*.c", OBJ_DIR "/");
+    compile_sources("src/crypto/**/*.c", OBJ_DIR "/");
 }
 
 CF_TARGET(link, CF_DEPENDS(compile), CF_HIDDEN) {
-    char* objs = CF_JOIN_GLOB(CF_GLOB(OBJ_DIR "/*.o"), " ");
+    char* shared_objs = CF_JOIN_GLOB(CF_GLOB(OBJ_DIR "/*.o"), " ");
+    char* boot_objs = CF_JOIN_GLOB(CF_GLOB(OBJ_DIR "/boot/*.o"), " ");
+    char* core_objs = CF_JOIN_GLOB(CF_GLOB(OBJ_DIR "/core/*.o"), " ");
 
     if (!CF_FILE_EXISTS(SBAT_CSV)) {
         printf(SB_TAG "  Creating %s\n", SBAT_CSV);
@@ -243,9 +254,18 @@ CF_TARGET(link, CF_DEPENDS(compile), CF_HIDDEN) {
 
     CF_BANNER(LD_TAG "Linking...");
     CF_RUN(
+        "lld-link -subsystem:efi_application -entry:efi_main -out:" SEALBOOT_EFI
+        " %s %s " SBAT_OBJ,
+        shared_objs,
+        boot_objs
+    );
+    printf(LD_TAG "  %s\n", SEALBOOT_EFI);
+
+    CF_RUN(
         "lld-link -subsystem:efi_application -entry:efi_main -out:" SEALCORE_EFI
-        " %s " SBAT_OBJ,
-        objs
+        " %s %s",
+        shared_objs,
+        core_objs
     );
     printf(LD_TAG "  %s\n", SEALCORE_EFI);
 }
@@ -254,7 +274,7 @@ CF_TARGET(esp, CF_DEPENDS(link), CF_HIDDEN) {
     CF_BANNER(SN_TAG "Signing...");
     CF_RUN(
         "out=$(sbsign --key " KEY_FILE " --cert " CRT_FILE " --output " GRUB_EFI
-        " " SEALCORE_EFI " 2>&1) || { echo \"$out\"; exit 1; }"
+        " " SEALBOOT_EFI " 2>&1) || { echo \"$out\"; exit 1; }"
     );
     printf(SN_TAG "  %s\n", GRUB_EFI);
 
@@ -267,6 +287,7 @@ CF_TARGET(esp, CF_DEPENDS(link), CF_HIDDEN) {
     );
     CF_RUN("mkfs.fat " ESP_IMG " >/dev/null");
     CF_RUN("mmd -i " ESP_IMG " ::/EFI " ESP_BOOT_DIR);
+    CF_RUN("mmd -i " ESP_IMG " " ESP_SEALCORE_DIR);
 
     printf(FS_TAG "  %s -> %s\n", SHIM, ESP_BOOTX64);
     CF_RUN("mcopy -i " ESP_IMG " " SHIM " " ESP_BOOTX64);
@@ -274,6 +295,8 @@ CF_TARGET(esp, CF_DEPENDS(link), CF_HIDDEN) {
     CF_RUN("mcopy -i " ESP_IMG " " MM " " ESP_MM64);
     printf(FS_TAG "  %s -> %s\n", GRUB_EFI, ESP_GRUB64);
     CF_RUN("mcopy -i " ESP_IMG " " GRUB_EFI " " ESP_GRUB64);
+    printf(FS_TAG "  %s -> %s\n", SEALCORE_EFI, ESP_SEALCORE64);
+    CF_RUN("mcopy -i " ESP_IMG " " SEALCORE_EFI " " ESP_SEALCORE64);
     printf(FS_TAG "  %s -> %s\n", DER_FILE, ESP_MOK_DER);
     CF_RUN("mcopy -i " ESP_IMG " " DER_FILE " " ESP_MOK_DER);
     printf(FS_TAG "  %s ready\n", ESP_IMG);
