@@ -21,6 +21,7 @@ rules:
     options:
       - commitlint
       - license
+      - boot
       - core
       - assets
       - libs
