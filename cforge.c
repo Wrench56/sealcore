@@ -114,7 +114,7 @@ static void compile_sources(const char* pattern) {
         CF_RUNP(
             "clang -target x86_64-unknown-windows -ffreestanding "
             "-fno-stack-protector -fno-zero-initialized-in-bss "
-            "-mno-red-zone -Wall -Wextra -Iincludes/ "
+            "-mno-red-zone -maes -Wall -Wextra -Iincludes/ "
             "-I/usr/include/efi -I/usr/include/efi/x86_64 -c %s -o %s",
             file,
             output
