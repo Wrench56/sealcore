@@ -64,7 +64,10 @@ double ldexp(double x, int exp) {
 #define SBAT_OBJ BUILD_DIR "/sbat.o"
 
 #define SEALBOOT_EFI BUILD_DIR "/sealboot.efi"
-#define SEALCORE_EFI BUILD_DIR "/sealcore.efi"
+#define SEALCORE_BIN BUILD_DIR "/sealcore.bin"
+#define SEALCORE_LD "src/core/sealcore.ld"
+#define SEALCORE_ENTRY_OFFSET 0x0
+
 #define GRUB_EFI BUILD_DIR "/grubx64.efi"
 
 #define ESP_IMG BUILD_DIR "/esp.img"
@@ -78,7 +81,7 @@ double ldexp(double x, int exp) {
 #define ESP_BOOTX64 ESP_BOOT_DIR "/BOOTX64.EFI"
 #define ESP_MM64 ESP_BOOT_DIR "/mmx64.efi"
 #define ESP_GRUB64 ESP_BOOT_DIR "/grubx64.efi"
-#define ESP_SEALCORE64 ESP_SEALCORE_DIR "/sealcore.efi"
+#define ESP_SEALCORE64 ESP_SEALCORE_DIR "/sealcore.bin"
 #define ESP_MOK_DER "::/MOK.der"
 
 #define LOGO_PNG ASSETS_DIR "/sealcore_164x164.png"
@@ -106,6 +109,23 @@ typedef union __attribute__((packed)) {
     uint32_t raw;
 } pixel_data_t;
 
+CF_CONFIG(pe) {
+    CF_SET_ENV(CC_TARGET_FLAGS, "-target x86_64-unknown-windows");
+}
+
+CF_CONFIG(pie) {
+    /* 
+       Dumb efibind.h turns EFIAPI into __attribute__((ms_abi))
+       only when HAVE_USE_MS_ABI is set. This sucks.
+       HAVE_USE_MS_ABI is derived from GNU_EFI_USE_MS_ABI.
+    */
+    CF_SET_ENV(
+        CC_TARGET_FLAGS,
+        "-target x86_64-unknown-none -DGNU_EFI_USE_MS_ABI -fshort-wchar "
+        "-fpic -fpie"
+    );
+}
+
 static void compile_sources(const char* pattern, const char* out_dir) {
     for CF_GLOBS_EACH(pattern, file) {
         char* output = CF_MAP(
@@ -115,10 +135,11 @@ static void compile_sources(const char* pattern, const char* out_dir) {
         );
         printf(CC_TAG "  %s -> %s\n", file, output);
         CF_RUNP(
-            "clang -target x86_64-unknown-windows -ffreestanding "
+            "clang %s -ffreestanding "
             "-fno-stack-protector -fno-zero-initialized-in-bss "
             "-mno-red-zone -maes -Wall -Wextra -Iincludes/ "
             "-I/usr/include/efi -I/usr/include/efi/x86_64 -c %s -o %s",
+            CF_ENV(CC_TARGET_FLAGS),
             file,
             output
         );
@@ -213,15 +234,12 @@ CF_TARGET(logo, CF_HIDDEN) {
     printf(LG_TAG "  %s ready\n", LOGO_BIN);
 }
 
-CF_TARGET(compile, CF_DEPENDS(logo), CF_HIDDEN) {
+CF_TARGET(compile_boot, CF_WITH_CONFIG(pe), CF_DEPENDS(logo), CF_HIDDEN) {
     CF_MKDIR(OBJ_DIR);
     CF_MKDIR(OBJ_DIR "/boot");
-    CF_MKDIR(OBJ_DIR "/core");
-    CF_BANNER(CC_TAG "Compiling...");
+    CF_BANNER(CC_TAG "Compiling sealboot...");
 
     compile_sources("src/boot/*.c", OBJ_DIR "/boot/");
-    compile_sources("src/core/*.c", OBJ_DIR "/core/");
-
     compile_sources("src/*.c", OBJ_DIR "/");
     compile_sources("src/gfx/*.c", OBJ_DIR "/");
     compile_sources("src/shim/*.c", OBJ_DIR "/");
@@ -229,7 +247,20 @@ CF_TARGET(compile, CF_DEPENDS(logo), CF_HIDDEN) {
     compile_sources("src/crypto/**/*.c", OBJ_DIR "/");
 }
 
-CF_TARGET(link, CF_DEPENDS(compile), CF_HIDDEN) {
+CF_TARGET(compile_core, CF_WITH_CONFIG(pie), CF_HIDDEN) {
+    CF_MKDIR(OBJ_DIR);
+    CF_MKDIR(OBJ_DIR "/core");
+    CF_BANNER(CC_TAG "Compiling sealcore...");
+
+    compile_sources("src/core/*.c", OBJ_DIR "/core/");
+}
+
+CF_TARGET(
+    link,
+    CF_DEPENDS(compile_boot),
+    CF_DEPENDS(compile_core),
+    CF_HIDDEN
+) {
     char* shared_objs = CF_JOIN_GLOB(CF_GLOB(OBJ_DIR "/*.o"), " ");
     char* boot_objs = CF_JOIN_GLOB(CF_GLOB(OBJ_DIR "/boot/*.o"), " ");
     char* core_objs = CF_JOIN_GLOB(CF_GLOB(OBJ_DIR "/core/*.o"), " ");
@@ -262,12 +293,12 @@ CF_TARGET(link, CF_DEPENDS(compile), CF_HIDDEN) {
     printf(LD_TAG "  %s\n", SEALBOOT_EFI);
 
     CF_RUN(
-        "lld-link -subsystem:efi_application -entry:efi_main -out:" SEALCORE_EFI
-        " %s %s",
-        shared_objs,
+        "ld.lld -T " SEALCORE_LD " --defsym=SEALCORE_ENTRY_OFFSET=%d -o "
+        SEALCORE_BIN " %s",
+        SEALCORE_ENTRY_OFFSET,
         core_objs
     );
-    printf(LD_TAG "  %s\n", SEALCORE_EFI);
+    printf(LD_TAG "  %s\n", SEALCORE_BIN);
 }
 
 CF_TARGET(esp, CF_DEPENDS(link), CF_HIDDEN) {
@@ -295,8 +326,8 @@ CF_TARGET(esp, CF_DEPENDS(link), CF_HIDDEN) {
     CF_RUN("mcopy -i " ESP_IMG " " MM " " ESP_MM64);
     printf(FS_TAG "  %s -> %s\n", GRUB_EFI, ESP_GRUB64);
     CF_RUN("mcopy -i " ESP_IMG " " GRUB_EFI " " ESP_GRUB64);
-    printf(FS_TAG "  %s -> %s\n", SEALCORE_EFI, ESP_SEALCORE64);
-    CF_RUN("mcopy -i " ESP_IMG " " SEALCORE_EFI " " ESP_SEALCORE64);
+    printf(FS_TAG "  %s -> %s\n", SEALCORE_BIN, ESP_SEALCORE64);
+    CF_RUN("mcopy -i " ESP_IMG " " SEALCORE_BIN " " ESP_SEALCORE64);
     printf(FS_TAG "  %s -> %s\n", DER_FILE, ESP_MOK_DER);
     CF_RUN("mcopy -i " ESP_IMG " " DER_FILE " " ESP_MOK_DER);
     printf(FS_TAG "  %s ready\n", ESP_IMG);

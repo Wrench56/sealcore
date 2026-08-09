@@ -13,15 +13,12 @@ static void wait_for_enter(EFI_SYSTEM_TABLE* st) {
     }
 }
 
-EFI_STATUS EFIAPI
-efi_main(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE* SystemTable) {
+EFI_STATUS EFIAPI main(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE* SystemTable) {
     (void) ImageHandle;
 
-    SystemTable->ConOut->ClearScreen(SystemTable->ConOut);
-    SystemTable->ConOut->OutputString(SystemTable->ConOut, L"Hello World!\r\n");
     SystemTable->ConOut->OutputString(
         SystemTable->ConOut,
-        L"Press Enter to continue...\r\n"
+        L"Hello World from sealcore!\r\n"
     );
 
     wait_for_enter(SystemTable);
