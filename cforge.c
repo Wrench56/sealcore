@@ -53,6 +53,9 @@ double ldexp(double x, int exp) {
 #define BUILD_DIR "build"
 #define OBJ_DIR BUILD_DIR "/obj"
 #define ASSETS_DIR "assets"
+#define IPP_LIB_DIR "libs/cryptography-primitives"
+
+#define IPP_LIB_STATIC IPP_LIB_DIR "/_install/lib/libippcp_s_y8.a"
 
 #define KEY_FILE BUILD_DIR "/MOK.key"
 #define CRT_FILE BUILD_DIR "/MOK.crt"
@@ -137,7 +140,7 @@ static void compile_sources(const char* pattern, const char* out_dir) {
         CF_RUNP(
             "clang %s -ffreestanding "
             "-fno-stack-protector -fno-zero-initialized-in-bss "
-            "-mno-red-zone -maes -Wall -Wextra -Iincludes/ "
+            "-mno-red-zone -maes -Wall -Wextra -Iincludes/ -Ilibs/ "
             "-I/usr/include/efi -I/usr/include/efi/x86_64 -c %s -o %s",
             CF_ENV(CC_TARGET_FLAGS),
             file,
@@ -255,10 +258,31 @@ CF_TARGET(compile_core, CF_WITH_CONFIG(pie), CF_HIDDEN) {
     compile_sources("src/core/*.c", OBJ_DIR "/core/");
 }
 
+CF_TARGET(compile_ipp, CF_HIDDEN) {
+    CF_BANNER(CC_TAG "Compiling Intel Cryptography Primitives Library...");
+    /*
+       The platform Y8 is probably good for any current Intel machine.
+       It only uses AES-NI and SSE. Probably would be fine to bump this
+       to AVX2, which would also likely bring some performance. Meh.
+    */
+    CF_RUN(
+        "cd %s; cmake CMakeLists.txt -B_build "
+        "-DARCH=intel64 -DMERGED_BLD:BOOL=off -DPLATFORM_LIST=\"y8\" "
+        "-DIPPCP_CUSTOM_BUILD=\"IPPCP_AES_ON;IPPCP_CLMUL_ON\" "
+        "-DCMAKE_INSTALL_PREFIX=\"$PWD/_install\" ",
+        IPP_LIB_DIR
+    );
+    CF_RUN(
+        "cd %s; cmake --build _build --target ippcp_s_y8 ippcp_dyn_y8 -j",
+        IPP_LIB_DIR
+    );
+}
+
 CF_TARGET(
     link,
     CF_DEPENDS(compile_boot),
     CF_DEPENDS(compile_core),
+    CF_DEPENDS(compile_ipp),
     CF_HIDDEN
 ) {
     char* shared_objs = CF_JOIN_GLOB(CF_GLOB(OBJ_DIR "/*.o"), " ");
@@ -294,8 +318,9 @@ CF_TARGET(
 
     CF_RUN(
         "ld.lld -T " SEALCORE_LD " --defsym=SEALCORE_ENTRY_OFFSET=%d -o "
-        SEALCORE_BIN " %s",
+        SEALCORE_BIN " %s %s",
         SEALCORE_ENTRY_OFFSET,
+        IPP_LIB_STATIC,
         core_objs
     );
     printf(LD_TAG "  %s\n", SEALCORE_BIN);
