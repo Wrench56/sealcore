@@ -2,6 +2,7 @@
 #include <stdint.h>
 
 #include "boot/loader.h"
+#include "boot/mstatus.h"
 #include "gfx/img.h"
 
 static const wchar_t
@@ -28,6 +29,38 @@ static void wait_for_enter(EFI_SYSTEM_TABLE* st) {
     }
 }
 
+static void print_status(
+    EFI_SYSTEM_TABLE* st,
+    const wchar_t* name,
+    bool status,
+    const wchar_t* extra
+) {
+    SIMPLE_TEXT_OUTPUT_INTERFACE* out = st->ConOut;
+
+    out->OutputString(out, L"[ ");
+    if (status) {
+        out->SetAttribute(out, EFI_GREEN | EFI_BACKGROUND_BLACK);
+        out->OutputString(out, L" UP  ");
+    } else {
+        out->SetAttribute(out, EFI_RED | EFI_BACKGROUND_BLACK);
+        out->OutputString(out, L"DOWN ");
+    }
+    out->SetAttribute(out, EFI_WHITE | EFI_BACKGROUND_BLACK);
+    out->OutputString(out, L"] ");
+    if (name != NULL) {
+        out->SetAttribute(out, EFI_CYAN | EFI_BACKGROUND_BLACK);
+        out->OutputString(out, (wchar_t*) name);
+        out->SetAttribute(out, EFI_WHITE | EFI_BACKGROUND_BLACK);
+        out->OutputString(out, L": ");
+    }
+
+    if (extra != NULL) {
+        out->OutputString(out, (wchar_t*) extra);
+    }
+
+    out->OutputString(out, L"\r\n");
+}
+
 EFI_STATUS EFIAPI
 efi_main(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE* SystemTable) {
     (void) ImageHandle;
@@ -40,7 +73,7 @@ efi_main(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE* SystemTable) {
     out->SetAttribute(out, EFI_WHITE | EFI_BACKGROUND_BLACK);
     out->OutputString(
         out,
-        L"\r\n=========================================\r\n"
+        L"\r\n=========================================\r\n\r\n"
     );
 
     setup_gfx(SystemTable);
@@ -54,6 +87,16 @@ efi_main(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE* SystemTable) {
     image.height = 164;
     image.data = (pixel_data_t*) &imgdata;
     draw_img(&image, width - image.width - 10, 10);
+
+    bool sb = secure_boot_active(SystemTable);
+    print_status(SystemTable, L"secure_boot", sb, L"Secure boot status");
+    bool wifi = wifi_present(SystemTable);
+    print_status(SystemTable, L"wifi", wifi, L"Driver existence status");
+
+    out->OutputString(
+        out,
+        L"\r\n=========================================\r\n\r\n"
+    );
 
     EFI_STATUS status;
     char key[] = "test1234";
