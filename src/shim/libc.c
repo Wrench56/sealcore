@@ -1,6 +1,18 @@
 #include "shim/libc.h"
 #include "stddef.h"
 
+/*
+   MSABI by convention uses a magic symbol (_fltused)
+   to signal that the program uses floating point operations...
+   Should be handled by UEFI target, but of course IPP is not
+   built by us... maybe I could debug it one day. Sometimes
+   I wonder how we got this far...
+
+    https://devblogs.microsoft.com/oldnewthing/20130108-00/?p=5623
+    https://github.com/ziglang/zig/issues/24148
+*/
+int _fltused = 0x9875;
+
 static EFI_SYSTEM_TABLE* priv_st = NULL;
 
 void setup_libc(EFI_SYSTEM_TABLE* st) {
