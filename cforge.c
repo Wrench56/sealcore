@@ -235,7 +235,7 @@ static void encrypt_sealcore(void) {
         sc_OSSL_PARAM_construct_octet_string(
             OSSL_KDF_PARAM_PASSWORD,
             pass,
-            pass_len + 1
+            pass_len
         ),
         sc_OSSL_PARAM_construct_octet_string(
             OSSL_KDF_PARAM_SALT,
