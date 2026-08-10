@@ -1,6 +1,6 @@
 #include "cforge.h"
 
-#if CF_VERSION_BELOW(1, 1, 0)
+#if CF_VERSION_BELOW(1, 2, 0)
 #error "CForge too old!"
 #endif
 
@@ -641,6 +641,57 @@ CF_TARGET(esp, CF_DEPENDS(link_boot), CF_HIDDEN) {
     printf(FS_TAG "  %s -> %s\n", DER_FILE, ESP_MOK_DER);
     CF_RUN("mcopy -i " ESP_IMG " " DER_FILE " " ESP_MOK_DER);
     printf(FS_TAG "  %s ready\n", ESP_IMG);
+}
+
+CF_TARGET(
+    flash,
+    CF_DEPENDS(keys),
+    CF_DEPENDS(esp),
+    CF_HELP_STRING("Copy boot artifacts to $SEALBOOT_STORAGE")
+) {
+    const char* storage = CF_ENV(SEALBOOT_STORAGE);
+    if (storage == NULL || storage[0] == '\0') {
+        fprintf(stderr, FA_TAG "Error: SEALBOOT_STORAGE is not set\n");
+        exit(1);
+    }
+    if (!CF_FILE_EXISTS(storage)) {
+        fprintf(stderr, FA_TAG "Error: %s does not exist\n", storage);
+        exit(1);
+    }
+
+    CF_BANNER(FS_TAG "Flashing artifacts...");
+    printf(FS_TAG "  Target: %s\n", storage);
+
+    char* boot_dir;
+    char* sealcore_dir;
+    char* bootx64_dst;
+    char* mm_dst;
+    char* grub_dst;
+    char* sealcore_dst;
+    char* mok_dst;
+    asprintf(&boot_dir, "%s/EFI/BOOT", storage);
+    asprintf(&sealcore_dir, "%s/EFI/SEALCORE", storage);
+    asprintf(&bootx64_dst, "%s/BOOTX64.EFI", boot_dir);
+    asprintf(&mm_dst, "%s/mmx64.efi", boot_dir);
+    asprintf(&grub_dst, "%s/grubx64.efi", boot_dir);
+    asprintf(&sealcore_dst, "%s/sealcore.bin", sealcore_dir);
+    asprintf(&mok_dst, "%s/MOK.der", storage);
+
+    CF_MKDIR(boot_dir);
+    CF_MKDIR(sealcore_dir);
+
+    printf(FS_TAG "  %s -> %s\n", SHIM, bootx64_dst);
+    CF_CP(SHIM, bootx64_dst);
+    printf(FS_TAG "  %s -> %s\n", MM, mm_dst);
+    CF_CP(MM, mm_dst);
+    printf(FS_TAG "  %s -> %s\n", GRUB_EFI, grub_dst);
+    CF_CP(GRUB_EFI, grub_dst);
+    printf(FS_TAG "  %s -> %s\n", SEALCORE_BIN, sealcore_dst);
+    CF_CP(SEALCORE_BIN, sealcore_dst);
+    printf(FS_TAG "  %s -> %s\n", DER_FILE, mok_dst);
+    CF_CP(DER_FILE, mok_dst);
+
+    printf(OK_TAG "Flashed to %s\n", storage);
 }
 
 CF_TARGET(vars, CF_HIDDEN) {
