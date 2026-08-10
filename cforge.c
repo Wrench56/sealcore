@@ -133,8 +133,7 @@ typedef union __attribute__((packed)) {
     uint32_t raw;
 } pixel_data_t;
 
-/* TODO: Generate random salt per compilation */
-static const uint8_t sc_kdf_salt[SC_KDF_SALT_LEN] = { 0 };
+static uint8_t sc_kdf_salt[SC_KDF_SALT_LEN];
 static uint8_t sc_gcm_iv[SC_GCM_IV_LEN];
 static uint8_t sc_gcm_tag[SC_GCM_TAG_LEN];
 
@@ -208,6 +207,11 @@ static void encrypt_sealcore(void) {
 
     if (getrandom(sc_gcm_iv, sizeof(sc_gcm_iv), 0) != sizeof(sc_gcm_iv)) {
         fprintf(stderr, FA_TAG "Error: Could not generate AES256-GCM IV\n");
+        exit(1);
+    }
+
+    if (getrandom(sc_kdf_salt, sizeof(sc_kdf_salt), 0) != sizeof(sc_kdf_salt)) {
+        fprintf(stderr, FA_TAG "Error: Could not generate KDF salt\n");
         exit(1);
     }
 
