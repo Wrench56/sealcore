@@ -10,6 +10,11 @@ void setup_gfx(EFI_SYSTEM_TABLE* st) {
     syst = st;
 }
 
+void get_screen_resolution(uint32_t* width, uint32_t* height) {
+    *width = prot->Mode->Info->HorizontalResolution;
+    *height = prot->Mode->Info->VerticalResolution;
+}
+
 void draw_img(image_t* image, uint32_t x, uint32_t y) {
     const EFI_GRAPHICS_PIXEL_FORMAT pform = prot->Mode->Info->PixelFormat;
     const uint32_t width = prot->Mode->Info->PixelsPerScanLine;

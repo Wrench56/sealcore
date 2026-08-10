@@ -21,6 +21,7 @@ typedef struct {
 } image_t;
 
 void setup_gfx(EFI_SYSTEM_TABLE* st);
+void get_screen_resolution(uint32_t* width, uint32_t* height);
 void draw_img(image_t* image, uint32_t x, uint32_t y);
 
 #endif // SEALCORE_IMG_H
