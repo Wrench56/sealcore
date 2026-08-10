@@ -63,7 +63,11 @@ double ldexp(double x, int exp) {
 #define ASSETS_DIR "assets"
 #define IPP_LIB_DIR "libs/cryptography-primitives"
 
-#define IPP_LIB_STATIC IPP_LIB_DIR "/_install/lib/libippcp_s_y8.a"
+#define IPP_PE_SHIM_DIR IPP_LIB_DIR "/_freestanding_shim"
+#define IPP_PE_WIN_CLANG_CMAKE \
+    IPP_LIB_DIR "/sources/cmake/windows/Clang9.0.0.cmake"
+#define IPP_LIB_STATIC_PE \
+    IPP_LIB_DIR "/_install_pe/lib/intel64/nonpic/ippcp_s_y8.lib"
 
 #define KEY_FILE BUILD_DIR "/MOK.key"
 #define CRT_FILE BUILD_DIR "/MOK.crt"
@@ -468,30 +472,82 @@ CF_TARGET(compile_core, CF_WITH_CONFIG(pie), CF_HIDDEN) {
 
 CF_TARGET(compile_ipp, CF_HIDDEN) {
     CF_BANNER(CC_TAG "Compiling Intel Cryptography Primitives Library...");
+    CF_MKDIR(IPP_PE_SHIM_DIR);
+
+    if (!CF_FILE_EXISTS(IPP_PE_WIN_CLANG_CMAKE)) {
+        CF_CP(
+            IPP_LIB_DIR "/sources/cmake/linux/Clang9.0.0.cmake",
+            IPP_PE_WIN_CLANG_CMAKE
+        );
+        CF_APPEND(
+            IPP_PE_WIN_CLANG_CMAKE,
+            "\nset(LINK_FLAG_STATIC_WINDOWS \"-c\") "
+            "set(CMAKE_C_FLAGS_RELEASE \" -O3 -DNDEBUG\")\n"
+        );
+    }
+
+    /*
+       Port some MSVC built-in instrinsics...
+    */
+    if (!CF_FILE_EXISTS(IPP_PE_SHIM_DIR "/stdlib.h")) {
+        CF_WRITE(
+            IPP_PE_SHIM_DIR "/stdlib.h",
+            "#ifndef SEALCORE_IPP_PE_STDLIB_SHIM_H\n"
+            "#define SEALCORE_IPP_PE_STDLIB_SHIM_H\n"
+            "static __inline unsigned short "
+            "_byteswap_ushort(unsigned short v) {\n"
+            "    return (unsigned short) __builtin_bswap16(v);\n"
+            "}\n"
+            "static __inline unsigned long _byteswap_ulong(unsigned long v) {\n"
+            "    return __builtin_bswap32(v);\n"
+            "}\n"
+            "static __inline unsigned long long "
+            "_byteswap_uint64(unsigned long long v) {\n"
+            "    return __builtin_bswap64(v);\n"
+            "}\n"
+            "#endif\n"
+        );
+    }
+    if (!CF_FILE_EXISTS(IPP_PE_SHIM_DIR "/assert.h")) {
+        CF_WRITE(
+            IPP_PE_SHIM_DIR "/assert.h",
+            "#ifndef SEALCORE_IPP_PE_ASSERT_SHIM_H\n"
+            "#define SEALCORE_IPP_PE_ASSERT_SHIM_H\n"
+            "#define assert(x) ((void) 0)\n"
+            "#endif\n"
+        );
+    }
+
     /*
        The platform Y8 is probably good for any current Intel machine.
        It only uses AES-NI and SSE. Probably would be fine to bump this
        to AVX2, which would also likely bring some performance. Meh.
     */
     CF_RUN(
-        "cd %s; cmake CMakeLists.txt -B_build "
+        "cd %s; cmake CMakeLists.txt -B_build_pe "
         "-DARCH=intel64 -DMERGED_BLD:BOOL=off -DPLATFORM_LIST=\"y8\" "
         "-DIPPCP_CUSTOM_BUILD=\"IPPCP_AES_ON;IPPCP_CLMUL_ON\" "
-        "-DCMAKE_INSTALL_PREFIX=\"$PWD/_install\" ",
+        "-DDYNAMIC_LIB:BOOL=off -DNO_CRYPTO_MB:BOOL=on -DNONPIC_LIB:BOOL=on "
+        "-DCMAKE_SYSTEM_NAME=Windows -DCMAKE_SYSTEM_PROCESSOR=x86_64 "
+        "-DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++ "
+        "-DCMAKE_C_COMPILER_TARGET=x86_64-unknown-windows "
+        "-DCMAKE_CXX_COMPILER_TARGET=x86_64-unknown-windows "
+        "-DCMAKE_C_FLAGS=\"-target x86_64-unknown-windows "
+        "-I$PWD/_freestanding_shim\" "
+        "-DCMAKE_CXX_FLAGS=\"-target x86_64-unknown-windows "
+        "-I$PWD/_freestanding_shim\" "
+        "-DCMAKE_TRY_COMPILE_TARGET_TYPE=STATIC_LIBRARY "
+        "-DCMAKE_INSTALL_PREFIX=\"$PWD/_install_pe\" ",
         IPP_LIB_DIR
     );
     CF_RUN(
-        "cd %s; cmake --build _build --target ippcp_s_y8 ippcp_dyn_y8 -j",
+        "cd %s; cmake --build _build_pe --target ippcp_s_y8 -j",
         IPP_LIB_DIR
     );
+    CF_RUN("cd %s; cmake --install _build_pe", IPP_LIB_DIR);
 }
 
-CF_TARGET(
-    link_core,
-    CF_DEPENDS(compile_core),
-    CF_DEPENDS(compile_ipp),
-    CF_HIDDEN
-) {
+CF_TARGET(link_core, CF_DEPENDS(compile_core), CF_HIDDEN) {
     char* core_objs = CF_JOIN_GLOB(CF_GLOB(OBJ_DIR "/core/*.o"), " ");
 
     CF_BANNER(LD_TAG "Linking sealcore...");
@@ -509,7 +565,12 @@ CF_TARGET(encrypt_core, CF_DEPENDS(link_core), CF_HIDDEN) {
     encrypt_sealcore();
 }
 
-CF_TARGET(link_boot, CF_DEPENDS(compile_boot), CF_HIDDEN) {
+CF_TARGET(
+    link_boot,
+    CF_DEPENDS(compile_boot),
+    CF_DEPENDS(compile_ipp),
+    CF_HIDDEN
+) {
     char* shared_objs = CF_JOIN_GLOB(CF_GLOB(OBJ_DIR "/*.o"), " ");
     char* boot_objs = CF_JOIN_GLOB(CF_GLOB(OBJ_DIR "/boot/*.o"), " ");
 
@@ -533,9 +594,9 @@ CF_TARGET(link_boot, CF_DEPENDS(compile_boot), CF_HIDDEN) {
 
     CF_BANNER(LD_TAG "Linking sealboot...");
     CF_RUN(
-        "lld-link -subsystem:efi_application -entry:efi_main -out:" SEALBOOT_EFI
-        " %s %s %s " SBAT_OBJ,
-        IPP_LIB_STATIC,
+        "lld-link -subsystem:efi_application -entry:efi_main -nodefaultlib "
+        "-out:" SEALBOOT_EFI " %s %s %s " SBAT_OBJ,
+        IPP_LIB_STATIC_PE,
         shared_objs,
         boot_objs
     );
