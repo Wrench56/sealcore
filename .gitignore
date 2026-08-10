@@ -15,6 +15,9 @@ compile_commands.json
 # Ignore build artifacts
 build/
 
+# Ignore sealcore encryption passphrase
+sealcore.key
+
 # Ignore commitlint executable
 tools/commitlint*
 

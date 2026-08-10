@@ -5,7 +5,7 @@
 #include "gfx/img.h"
 
 static const uint8_t imgdata[] = {
-    #include "boot/logo.hex"
+#include "boot/logo.hex"
 };
 
 static void wait_for_enter(EFI_SYSTEM_TABLE* st) {
@@ -36,7 +36,10 @@ efi_main(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE* SystemTable) {
     draw_img(&image, 0, 0);
 
     EFI_STATUS status;
-    sealcore_entry_fn_t fn = load_sealcore(SystemTable, &status);
+
+    char key[] = "test1234";
+    sealcore_entry_fn_t
+        fn = load_sealcore(SystemTable, &status, key, sizeof(key));
     if (EFI_ERROR(status)) {
         return status;
     }
