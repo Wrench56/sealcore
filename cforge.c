@@ -524,7 +524,7 @@ CF_TARGET(compile_ipp, CF_HIDDEN) {
        to AVX2, which would also likely bring some performance. Meh.
     */
     CF_RUN(
-        "cd %s; cmake CMakeLists.txt -B_build_pe "
+        "set -o pipefail; { cd %s; cmake CMakeLists.txt -B_build_pe "
         "-DARCH=intel64 -DMERGED_BLD:BOOL=off -DPLATFORM_LIST=\"y8\" "
         "-DIPPCP_CUSTOM_BUILD=\"IPPCP_AES_ON;IPPCP_CLMUL_ON\" "
         "-DDYNAMIC_LIB:BOOL=off -DNO_CRYPTO_MB:BOOL=on -DNONPIC_LIB:BOOL=on "
@@ -537,14 +537,18 @@ CF_TARGET(compile_ipp, CF_HIDDEN) {
         "-DCMAKE_CXX_FLAGS=\"-target x86_64-unknown-windows "
         "-I$PWD/_freestanding_shim\" "
         "-DCMAKE_TRY_COMPILE_TARGET_TYPE=STATIC_LIBRARY "
-        "-DCMAKE_INSTALL_PREFIX=\"$PWD/_install_pe\" ",
+        "-DCMAKE_INSTALL_PREFIX=\"$PWD/_install_pe\" ; } 2>&1 | sed 's/^/" CC_TAG "/'",
         IPP_LIB_DIR
     );
     CF_RUN(
-        "cd %s; cmake --build _build_pe --target ippcp_s_y8 -j",
+        "set -o pipefail; { cd %s; cmake --build _build_pe --target ippcp_s_y8 -j ; } "
+        "2>&1 | sed 's/^/" CC_TAG "/'",
         IPP_LIB_DIR
     );
-    CF_RUN("cd %s; cmake --install _build_pe", IPP_LIB_DIR);
+    CF_RUN(
+        "set -o pipefail; { cd %s; cmake --install _build_pe ; } 2>&1 | sed 's/^/" CC_TAG "/'",
+        IPP_LIB_DIR
+    );
 }
 
 CF_TARGET(link_core, CF_DEPENDS(compile_core), CF_HIDDEN) {
