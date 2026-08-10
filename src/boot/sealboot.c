@@ -1,9 +1,14 @@
 #include <efi.h>
 #include <stdint.h>
 
+#include "boot/boot.h"
 #include "boot/loader.h"
 #include "boot/mstatus.h"
 #include "gfx/img.h"
+#include "shim/libc.h"
+
+#define STRINGIFY(x) #x
+#define TOSTRING(x) STRINGIFY(x)
 
 static const wchar_t
     banner[] = L"   _____            __                   \r\n"
@@ -27,6 +32,58 @@ static void wait_for_enter(EFI_SYSTEM_TABLE* st) {
             break;
         }
     }
+}
+
+static inline uint16_t get_pw(EFI_SYSTEM_TABLE* st, char* pw) {
+    EFI_INPUT_KEY key;
+    size_t index;
+    size_t curr = 0;
+
+    st->ConOut->OutputString(st->ConOut, L" > ");
+    for (;;) {
+        st->BootServices->WaitForEvent(1, &st->ConIn->WaitForKey, &index);
+        st->ConIn->ReadKeyStroke(st->ConIn, &key);
+        if (key.UnicodeChar == CHAR_CARRIAGE_RETURN) {
+            break;
+        } else {
+            if (key.UnicodeChar < 0x80) {
+                pw[curr++] = (char) key.UnicodeChar;
+                st->ConOut->OutputString(st->ConOut, L"*");
+
+                if (curr >= PW_MAX_LEN) {
+                    st->ConOut->OutputString(
+                        st->ConOut,
+                        L"\r\nError: Your password is longer than " TOSTRING(
+                            PW_MAX_LEN
+                        ) " characters!\r\n"
+                    );
+                    st->ConOut->SetCursorPosition(
+                        st->ConOut,
+                        st->ConOut->Mode->CursorColumn - 1,
+                        3
+                    );
+                    memset(pw, 0, PW_MAX_LEN);
+                }
+            } else {
+                st->ConOut->OutputString(
+                    st->ConOut,
+                    L"\r\nError: A password cannot contain a non-ASCII "
+                    L"character!\r\n"
+                );
+                st->ConOut->SetCursorPosition(
+                    st->ConOut,
+                    st->ConOut->Mode->CursorColumn - 1,
+                    3
+                );
+                memset(pw, 0, PW_MAX_LEN);
+            }
+        }
+    }
+
+    pw[curr] = '\0';
+    st->ConOut->OutputString(st->ConOut, L"\r\n\r\n");
+
+    return curr;
 }
 
 static void print_status(
@@ -98,22 +155,23 @@ efi_main(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE* SystemTable) {
         L"\r\n=========================================\r\n\r\n"
     );
 
+    char pw[PW_MAX_LEN] = { 0 };
+    uint16_t pw_sz = get_pw(SystemTable, pw);
+
     EFI_STATUS status;
-    char key[] = "test1234";
-    sealcore_entry_fn_t
-        fn = load_sealcore(SystemTable, &status, key, sizeof(key));
+    sealcore_entry_fn_t fn = load_sealcore(SystemTable, &status, pw, pw_sz);
     if (EFI_ERROR(status)) {
+        SystemTable->ConOut->OutputString(
+            SystemTable->ConOut,
+            L"Authentication error!\r\n"
+        );
+        wait_for_enter(SystemTable);
+
         return status;
     }
 
     fn(ImageHandle, SystemTable);
+
     free_sealcore(SystemTable, fn);
-
-    SystemTable->ConOut->OutputString(
-        SystemTable->ConOut,
-        L"Press Enter to continue...\r\n"
-    );
-    wait_for_enter(SystemTable);
-
     return EFI_SUCCESS;
 }
